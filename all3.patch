@@ -1,0 +1,281 @@
+diff --git a/Makefile b/Makefile
+index f8c820e..bd72bd9 100644
+--- a/Makefile
++++ b/Makefile
+@@ -139,6 +139,10 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
++	$U/_seed\
++	$U/_next\
++	$U/_nexts\
++	$U/_choice\
+ 
+ fs.img: mkfs/mkfs README $(UPROGS)
+ 	mkfs/mkfs fs.img README $(UPROGS)
+diff --git a/kernel/defs.h b/kernel/defs.h
+index d1b6bb9..3b237fb 100644
+--- a/kernel/defs.h
++++ b/kernel/defs.h
+@@ -106,7 +106,8 @@ void            yield(void);
+ int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
+ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
+ void            procdump(void);
+-
++void            setSeed(int);
++int             getRandomNumber(void);
+ // swtch.S
+ void            swtch(struct context*, struct context*);
+ 
+diff --git a/kernel/proc.c b/kernel/proc.c
+index 130d9ce..86daf2b 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -693,3 +693,17 @@ procdump(void)
+     printf("\n");
+   }
+ }
++
++int val = 0;
++
++void 
++setSeed (int value)
++{
++  val = value ;
++ // printf(" initial value has been set to  %d\n",value);
++}
++int getRandomNumber()
++{
++  val ++ ;
++  return val;
++}
+\ No newline at end of file
+diff --git a/kernel/syscall.c b/kernel/syscall.c
+index ed65409..a5b1c6a 100644
+--- a/kernel/syscall.c
++++ b/kernel/syscall.c
+@@ -101,6 +101,10 @@ extern uint64 sys_unlink(void);
+ extern uint64 sys_link(void);
+ extern uint64 sys_mkdir(void);
+ extern uint64 sys_close(void);
++extern uint64 sys_setSeed(void);
++extern uint64 sys_getRandomNumber(void);
++extern uint64 sys_gm(void);
++extern uint64 sys_choice(void);
+ 
+ // An array mapping syscall numbers from syscall.h
+ // to the function that handles the system call.
+@@ -126,6 +130,10 @@ static uint64 (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_setSeed]  sys_setSeed,
++[SYS_getRandomNumber]   sys_getRandomNumber,
++[SYS_gm] sys_gm,
++[SYS_choice] sys_choice ,
+ };
+ 
+ void
+diff --git a/kernel/syscall.h b/kernel/syscall.h
+index bc5f356..258a6ee 100644
+--- a/kernel/syscall.h
++++ b/kernel/syscall.h
+@@ -20,3 +20,8 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_setSeed  21
++#define SYS_getRandomNumber 22
++#define SYS_gm 23
++#define SYS_choice 24
++
+diff --git a/kernel/sysproc.c b/kernel/sysproc.c
+index 3b4d5bd..43456a6 100644
+--- a/kernel/sysproc.c
++++ b/kernel/sysproc.c
+@@ -91,3 +91,51 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
++int seed ;
++uint64
++sys_setSeed(void)
++{
++  int initial ;
++  argint(0,&initial);
++  seed = initial ;
++  setSeed(initial);
++
++  return 0;
++}
++uint64 
++sys_gm(void)
++{
++  int n ;
++  uint64 ptr ;
++  argint(0,&n);
++  argaddr(1,&ptr);
++  int ar[15];
++  for (int i =0 ; i < n ; i++)
++  {
++    ar[i] = ++seed;
++  }
++  copyout(myproc()->pagetable,ptr,(char*)&ar,sizeof(ar));
++  return 0;
++
++}
++struct array {
++  int len;
++  int array[15];
++};
++uint64 
++sys_choice(void){
++  uint64 ptr ;
++  argaddr(0,&ptr);
++  struct array st;
++  copyin(myproc()->pagetable , (char*)&st,ptr , sizeof(struct array));
++  int index = (++seed)%st.len ;
++  return st.array[index];
++  
++
++}
++uint64 
++sys_getRandomNumber(void) {
++  
++  return getRandomNumber();
++
++}
+\ No newline at end of file
+diff --git a/user/choice.c b/user/choice.c
+new file mode 100644
+index 0000000..27ee7c1
+--- /dev/null
++++ b/user/choice.c
+@@ -0,0 +1,24 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++// struct array{
++// int len; // length of array
++// int array[15]; //array elements
++// };
++int main(int argc , char *argv[])
++{
++    struct array st ;
++    int n = atoi(argv[1]);
++    st.len  = n;
++    int i = 1 ;
++    for (i =  2 ; i < argc ; i++ )
++    {
++     st.array[i-2]=atoi(argv[i]);   
++    }
++    int rnd  = choice (&st);
++    printf("random number : %d\n",rnd);
++
++
++
++
++}
+\ No newline at end of file
+diff --git a/user/next.c b/user/next.c
+new file mode 100644
+index 0000000..4add3f9
+--- /dev/null
++++ b/user/next.c
+@@ -0,0 +1,10 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++int main(int argc , char *argv[])
++{
++    int next = getRandomNumber();
++    printf("Next random number is %d\n",next);
++
++
++}
+\ No newline at end of file
+diff --git a/user/nexts.c b/user/nexts.c
+new file mode 100644
+index 0000000..62a714e
+--- /dev/null
++++ b/user/nexts.c
+@@ -0,0 +1,19 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++int main(int argc , char *argv[])
++{
++    int n = atoi(argv[1]);
++    int *arr = malloc(n*sizeof(int));
++    gm(n,arr);
++    for (int i =0 ;i < n ; i ++)
++    {
++        printf("%d , ",arr[i]);
++    }
++    printf("\n");
++
++
++
++
++
++}
+\ No newline at end of file
+diff --git a/user/seed.c b/user/seed.c
+new file mode 100644
+index 0000000..7a388d1
+--- /dev/null
++++ b/user/seed.c
+@@ -0,0 +1,14 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++int main(int argc , char *argv[])
++{
++
++    int initial  = atoi(argv[1]);
++    setSeed(initial);
++    printf("The seed has been set to %d\n",initial);
++    return 0;
++    
++
++
++}
+\ No newline at end of file
+diff --git a/user/user.h b/user/user.h
+index f16fe27..5f54f61 100644
+--- a/user/user.h
++++ b/user/user.h
+@@ -1,4 +1,8 @@
+ struct stat;
++struct array{
++int len; // length of array
++int array[15]; //array elements
++};
+ 
+ // system calls
+ int fork(void);
+@@ -22,7 +26,10 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
+-
++int setSeed(int val);
++int getRandomNumber(void);
++void gm(int num , int *);
++int choice(struct array *);
+ // ulib.c
+ int stat(const char*, struct stat*);
+ char* strcpy(char*, const char*);
+diff --git a/user/usys.pl b/user/usys.pl
+index 01e426e..0acaa7d 100755
+--- a/user/usys.pl
++++ b/user/usys.pl
+@@ -36,3 +36,7 @@ entry("getpid");
+ entry("sbrk");
+ entry("sleep");
+ entry("uptime");
++entry("setSeed");
++entry("getRandomNumber");
++entry("gm");
++entry("choice");
+\ No newline at end of file
